@@ -44,6 +44,7 @@ def clean_text(raw: str) -> str:
       return "\n".join(out)
 
 def split_parts(text: str) -> list[dict]:
+    """텍스트를 섹션별로 나누어 딕셔너리 리스트로 반환"""
     results = []
     
     current_title = None
@@ -95,11 +96,10 @@ def split_parts(text: str) -> list[dict]:
     commit_section()
     return results
 
-
 pdf_path = r'C:\Users\302\my-docs-chatbot\docs\Vectric Lua Interface Documentation.pdf'
-pdf_text = extract_text_from_pdf(pdf_path)
-# print(pdf_text)
-pdf_text_cleaned = clean_text(pdf_text)
-# print(pdf_text_cleaned)
-pdf_parts = split_parts(pdf_text_cleaned)
-print(pdf_parts)
+pdf_raw = extract_text_from_pdf(pdf_path)
+pdf_clean = clean_text(pdf_raw)
+pdf_parts = split_parts(pdf_clean)
+
+print(f"PDF 추출 완료: {len(pdf_parts)}개의 섹션")
+print(f"첫 번째 섹션 예시: {pdf_parts}")
