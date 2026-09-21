@@ -43,57 +43,57 @@ def clean_text(raw: str) -> str:
       out.append(pre_s)
       return "\n".join(out)
 
-def split_parts(text: str) -> list[dict]:
-    """텍스트를 섹션별로 나누어 딕셔너리 리스트로 반환"""
-    results = []
-    
+def split_parts(text: str) -> dict:
+    """텍스트를 섹션별로 나누어 하나의 딕셔너리로 반환"""
+    results = {}  # 단일 딕셔너리로 관리
     current_title = None
     buffer_lines = []
     
     # 현재 읽고 있는 줄이 description 영역인지 여부
-    # (title 색상이 나오기 전까지의 모든 텍스트/서브타이틀은 desc로 취급)
-    is_desc_zone = False 
+    is_desc_zone = False
 
     def commit_section():
         nonlocal current_title, buffer_lines
         if current_title and buffer_lines:
             content = " ".join(buffer_lines).strip()
             if content:
-                # 기존 리스트에서 현재 타이틀을 가진 딕셔너리가 있는지 확인
-                title_dict = next((d for d in results if current_title in d), None)
-                
-                if title_dict:
-                    # 이미 존재한다면 공백으로 내용 누적 (중복 방지)
-                    title_dict[current_title] += " " + content
+                # 이미 딕셔너리에 같은 타이틀(Key)이 존재한다면 
+                if current_title in results:
+                    # 기존 내용 뒤에 공백을 두고 누적
+                    results[current_title] += " " + content
                 else:
-                    # 없으면 신규 딕셔너리 생성 후 추가
-                    results.append({current_title: content})
+                    # 없으면 신규 Key-Value 쌍 추가
+                    results[current_title] = content
+        
+        # 섹션 저장 후 버퍼 초기화
         buffer_lines = []
 
     for line in text.splitlines():
         s = line.strip()
         
-        # 1. Title 색상 감지 -> 새로운 섹션 시작
+        # 1. Title 색상 감지 -> 새로운 섹션 시작 준비
         if s in ("color #1f497d", "color #365f91"):
-            commit_section()  # 이전까지 쌓인 desc 저장
+            commit_section()  # 이전까지 쌓인 섹션 저장
             current_title = None
             is_desc_zone = False
             continue
             
+        # 빈 줄은 건너뜀 (문자열 결합 시 불필요한 공백 방지)
+        if not s:
+            continue
+
         # 2. 텍스트 처리
         if not is_desc_zone:
-            # Title 색상 아래에 나오는 첫 줄들을 타이틀명으로 누적
-            if current_title:
-                current_title += " " + line
-            else:
-                current_title = line
-            is_desc_zone = True  # 타이틀 아래의 텍스트는 desc 영역으로 간주
+            # Title 색상 아래에 나오는 첫 줄을 타이틀명으로 지정
+            current_title = s
+            is_desc_zone = True  # 다음 줄부터는 desc 영역으로 간주
         else:
-            # 그 외의 모든 텍스트(subtitle 포함)는 desc 버퍼에 누적
-            buffer_lines.append(line)
+            # 그 외의 모든 텍스트는 desc 버퍼에 누적
+            buffer_lines.append(s)
 
     # 루프 종료 후 남아있는 마지막 섹션 저장
     commit_section()
+    
     return results
 
 pdf_path = r'C:\Users\302\my-docs-chatbot\docs\Vectric Lua Interface Documentation.pdf'
@@ -102,4 +102,4 @@ pdf_clean = clean_text(pdf_raw)
 pdf_parts = split_parts(pdf_clean)
 
 print(f"PDF 추출 완료: {len(pdf_parts)}개의 섹션")
-print(f"첫 번째 섹션 예시: {pdf_parts}")
+print(f"첫 번째 섹션 예시: {next(iter(pdf_parts))} : {pdf_parts[next(iter(pdf_parts))]}")
