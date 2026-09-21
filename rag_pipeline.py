@@ -106,7 +106,7 @@ def compare_chunking(query: str, strategies: dict, strategy_vecs: dict, top_k: i
             print(f"[{rank}위] 유사도: {score:.4f}  |  ❌ 노이즈: {noise_status}")
             print(f"      {preview}")
 
-def generate_rag_answer(collection, query: str, top_k: int = 3, model: str = "gpt-4o") -> str:
+def generate_rag_answer(collection, query: str, top_k: int = 3, model: str = "openai/gpt-oss-20b") -> str:
     """
     Vector DB에서 최고 유사도 청크들을 검색하여 컨텍스트로 삼고,
     OpenAI Chat Completion API를 통해 최종 답변을 생성합니다.

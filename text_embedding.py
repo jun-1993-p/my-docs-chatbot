@@ -44,60 +44,46 @@ def get_embedding_tensor(text_list: list[str], model: str = "nvidia/nemotron-3-e
     # ChromaDB 호환을 위해 최종 list[list[float]]로 반환
     return embedding_tensor.tolist()
 
-def ingest_chunks_to_chromadb(chunks_dict: dict, collection_name: str = "vectric_lua_guide") -> chromadb.Collection:
+def ingest_chunks_to_chromadb(collection, clean_text_list: list[str], features_tensor: torch.Tensor, raw_chunks: list[dict] = None):
     """
-    chunk_by_article에서 생성된 {타이틀: [청크 리스트]} 구조의 딕셔너리를 
-    ChromaDB의 특정 컬렉션에 적재합니다.
+    미리 생성된 임베딩 텐서와 텍스트 리스트를 받아 ChromaDB 컬렉션에 원샷으로 적재합니다.
     """
-    # 1. 크로마 DB 클라이언트 초기화 (로컬 영구 저장소 모드 설정)
-    # 2026년 크로마DB 표준 규격에 부합하는 PersistentClient 객체 사용
-    client = chromadb.PersistentClient(path="./chroma_db_storage")
-    
-    # 2. 컬렉션 생성 또는 기존 컬렉션 로드 (동일 이름이 있으면 가져옴)
-    collection = client.get_or_create_collection(
-        name=collection_name,
-        metadata={"description": "Vectric Lua Script Documentation Chunks"}
-    )
-    
-    # 3. 딕셔너리 데이터를 순회하며 적재용 평탄화 데이터 생성
-    all_documents = []
-    all_metadatas = []
-    all_ids = []
-    
-    for title, chunk_list in chunks_dict.items():
-        for idx, chunk in enumerate(chunk_list):
-            all_documents.append(chunk)
-            
-            # 메타데이터 구조화: RAG 검색 시 필터링이 가능하도록 타이틀과 순번 저장
-            all_metadatas.append({
-                "source_title": title,
-                "chunk_index": idx
-            })
-            
-            # 고유 ID 생성 (중복 적재 방지 및 추적용)
-            all_ids.append(f"id_{title}_{idx}_{str(uuid.uuid4())[:8]}")
-            
-    if not all_documents:
-        print("적재할 청크 데이터가 존재하지 않습니다.")
-        return collection
+    if len(clean_text_list) == 0:
+        print("적재할 데이터가 없습니다.")
+        return
         
-    # 4. 일괄 임베딩 생성 (앞서 리팩토링한 함수 호출)
-    print(f"총 {len(all_documents)}개의 청크에 대한 임베딩 벡터 생성을 시작합니다...")
-    all_embeddings = get_embedding_tensor(all_documents)
+    # 1. PyTorch 텐서를 ChromaDB가 허용하는 list[list[float]] 구조로 변환
+    if isinstance(features_tensor, torch.Tensor):
+        embeddings_list = features_tensor.tolist()
+    else:
+        embeddings_list = features_tensor  # 이미 리스트 형태인 경우 대비
+
+    # 2. 유일한 ID 배열 생성 (청크 수와 동일하게)
+    ids = [str(uuid.uuid4()) for _ in range(len(clean_text_list))]
+
+    # 3. (선택사항) 메타데이터 가공 - 원본 raw_chunks에 다른 정보(예: page, file_name)가 있다면 주입
+    metadatas = []
+    if raw_chunks and len(raw_chunks) == len(clean_text_list):
+        for chunk in raw_chunks:
+            # ChromaDB 메타데이터는 오직 str, int, float, bool 타입만 허용합니다.
+            metadata = {k: v for k, v in chunk.items() if isinstance(v, (str, int, float, bool))}
+            metadatas.append(metadata)
+    else:
+        # 메타데이터가 없을 경우 빈 값 처리
+        metadatas = [{"source": "pdf_chunk"} for _ in range(len(clean_text_list))]
+
+    # 4. ChromaDB 적재 작업 실행 (단 한 번의 요청으로 배치 처리)
+    print(f"ChromaDB '{collection.name}' 컬렉션에 {len(embeddings_list)}개의 벡터 데이터를 적재 중입니다...")
     
-    # 5. ChromaDB 대량 적재 (Upsert 수행으로 안전성 확보)
-    print(f"ChromaDB '{collection_name}' 컬렉션에 데이터를 적재 중입니다...")
-    collection.upsert(
-        ids=all_ids,
-        embeddings=all_embeddings,
-        metadatas=all_metadatas,
-        documents=all_documents
+    collection.add(
+        ids=ids,
+        embeddings=embeddings_list,
+        documents=clean_text_list,  # 실제 검색 시 리턴받을 컨텍스트 텍스트들
+        metadatas=metadatas
     )
     
     print(f"--- 적재 완료: 총 {collection.count()}개의 벡터가 컬렉션에 저장되었습니다. ---")
-    return collection
-
-
+    
 # 1단계: chunk_by_article을 통해 타이틀별 청크 딕셔너리 획득
 # input_data = {'Introduction': '...', 'Objects': '...'}
 processed_chunks_dict = chunk_by_article(text_ingestion.pdf_parts, max_len=800)
