@@ -1,28 +1,54 @@
 import fitz  # PyMuPDF
 import re
 
+"""
+Test Ingestion 시나리오.
+1. 데이터 추출.
+      * format : pdf
+      * start_index : 35 - 1
+      * end_index : en(doc)
+      * output : text, color
+      * toolkit : PyMuPDF (fitz)
+
+2. 데이터 유효성 검사 : PASS
+
+3. 불필요한 데이터 제거
+      * 불필요한 blank 제거.
+      * 불필요한 color_data 제거.
+      * 불필요한 page_number 제거.
+"""
+
+# 데이터 추출.
 def extract_text_from_pdf(pdf_path: str) -> str:
       """PDF에서 텍스트 추출"""
       doc = fitz.open(pdf_path)
-      # print(len(doc))
       pdf_text = ""
+      color = ""
+      pre_color = ""
 
-      for page_num in range(34,len(doc)):
+      for page_num in range(35 - 1, len(doc)):
             page = doc[page_num]
             blocks = page.get_text("dict", flags=11)["blocks"]
             for b in blocks:  
                   for l in b["lines"]:
                         for s in l["spans"]: 
-                              pdf_text += s['text'] + "\n" + f"color #{s['color']:06x}" + "\n"
-                              # print(f"Text: '{s['text']}'")  
-                              # print(f"color #{s['color']:06x}")
+                              text = s['text'].strip() + "\n"
+                              color = s['color']
+
+                              if pre_color != color:
+                                    color = f"color #{color:06x}" + "\n"
+                                    pdf_text +=  color + text
+                              else:
+                                    pdf_text += text
+                              
+                              pre_color = s['color']
 
       return pdf_text
 
+# 데이터 변환 1. 불필요한 정보 제거.
 def clean_text(raw: str) -> str:
       """PDF에서 추출한 텍스트를 정리"""
       out = []
-      pre_s = ''
 
       for line in raw.splitlines():
             s = line.strip()
@@ -32,74 +58,46 @@ def clean_text(raw: str) -> str:
                   continue
             if re.match(r"\d", line):
                   continue
-            if s in ("color #1f497d", "color #365f91"):
-                  out.append(line.rstrip())
-                  out.append(pre_s)
-                  pre_s = ''
-                  continue
-            out.append(pre_s)
-            pre_s = line.rstrip()
+            out.append(line.rstrip())
 
-      out.append(pre_s)
       return "\n".join(out)
 
-def split_parts(text: str) -> dict:
-    """텍스트를 섹션별로 나누어 하나의 딕셔너리로 반환"""
-    results = {}  # 단일 딕셔너리로 관리
-    current_title = None
-    buffer_lines = []
+# 데이터 변환 2. 섹션별로 나누기.
+def split_parts(text: str) -> dict[str,str]:
+      """텍스트를 섹션별로 나누어 리스트로 반환"""
+      parts = {}
+      current_title = None
+      current_color = None
+
+      for line in text.splitlines():
+            s = line.strip()
+            if not s:
+                  continue
+            if s in ("color #1f497d", "color #365f91"):
+                  current_color = s
+            elif current_color:
+                  current_title = s
+                  current_color = None
+            elif current_title:
+                  parts.setdefault(current_title, []).append(line) 
+
+      return {k: "\n".join(v) for k, v in parts.items()}
+
+# 목적지로 적재
+def pdf_ingest():
+      # PDF 경로 설정.
+      pdf_path = r'C:\Users\302\my-docs-chatbot\docs\Vectric Lua Interface Documentation.pdf'
+
+      # PDF 추출.
+      pdf_raw = extract_text_from_pdf(pdf_path)
+
+      # PDF 변환.
+      pdf_clean = clean_text(pdf_raw)
+      pdf_parts = split_parts(pdf_clean)
     
-    # 현재 읽고 있는 줄이 description 영역인지 여부
-    is_desc_zone = False
+      return pdf_parts
 
-    def commit_section():
-        nonlocal current_title, buffer_lines
-        if current_title and buffer_lines:
-            content = " ".join(buffer_lines).strip()
-            if content:
-                # 이미 딕셔너리에 같은 타이틀(Key)이 존재한다면 
-                if current_title in results:
-                    # 기존 내용 뒤에 공백을 두고 누적
-                    results[current_title] += " " + content
-                else:
-                    # 없으면 신규 Key-Value 쌍 추가
-                    results[current_title] = content
-        
-        # 섹션 저장 후 버퍼 초기화
-        buffer_lines = []
-
-    for line in text.splitlines():
-        s = line.strip()
-        
-        # 1. Title 색상 감지 -> 새로운 섹션 시작 준비
-        if s in ("color #1f497d", "color #365f91"):
-            commit_section()  # 이전까지 쌓인 섹션 저장
-            current_title = None
-            is_desc_zone = False
-            continue
-            
-        # 빈 줄은 건너뜀 (문자열 결합 시 불필요한 공백 방지)
-        if not s:
-            continue
-
-        # 2. 텍스트 처리
-        if not is_desc_zone:
-            # Title 색상 아래에 나오는 첫 줄을 타이틀명으로 지정
-            current_title = s
-            is_desc_zone = True  # 다음 줄부터는 desc 영역으로 간주
-        else:
-            # 그 외의 모든 텍스트는 desc 버퍼에 누적
-            buffer_lines.append(s)
-
-    # 루프 종료 후 남아있는 마지막 섹션 저장
-    commit_section()
-    
-    return results
-
-pdf_path = r'C:\Users\302\my-docs-chatbot\docs\Vectric Lua Interface Documentation.pdf'
-pdf_raw = extract_text_from_pdf(pdf_path)
-pdf_clean = clean_text(pdf_raw)
-pdf_parts = split_parts(pdf_clean)
-
-print(f"PDF 추출 완료: {len(pdf_parts)}개의 섹션")
-print(f"첫 번째 섹션 예시: {next(iter(pdf_parts))} : {pdf_parts[next(iter(pdf_parts))]}")
+# PDF 추출 및 가공 실행 테스트.
+# pdf_parts = pdf_ingest()
+# print(f"PDF 추출 완료: {len(pdf_parts)}개의 섹션")
+# print(f"첫 번째 섹션 예시: {pdf_parts.items()}")
