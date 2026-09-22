@@ -12,10 +12,14 @@ Test Ingestion 시나리오.
 
 2. 데이터 유효성 검사 : PASS
 
-3. 불필요한 데이터 제거
-      * 불필요한 blank 제거.
-      * 불필요한 color_data 제거.
-      * 불필요한 page_number 제거.
+3. 불필요한 데이터 제거.
+      * 불필요한 blank 제거
+      * 불필요한 color_data 제거
+      * 불필요한 page_number 제거
+
+4. 데이터 변환.
+      * title_keyword : "color #1f497d", "color #365f91"
+      * def func() -> dict[str,str]:
 """
 
 # 데이터 추출.
